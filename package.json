@@ -85,6 +85,7 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
+    "react-native-image-crop-picker": "^0.42.0",
     "react-native-vision-camera": "^3.9.0"
   },
   "peerDependencies": {

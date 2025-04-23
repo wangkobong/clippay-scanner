@@ -1,6 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, ActivityIndicator, ScrollView } from 'react-native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  Image,
+  ActivityIndicator,
+  ScrollView,
+  Dimensions,
+} from 'react-native';
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+} from 'react-native-vision-camera';
+import ImagePicker from 'react-native-image-crop-picker';
+
+// 화면 크기
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 // 문서 유형 정의
 export type DocumentType = {
@@ -23,18 +41,37 @@ interface PassportScanScreenProps {
   onImageCaptured?: (imageUri: string, documentType: DocumentType) => void;
 }
 
-export function PassportScanScreen({ 
-  serverUrl, 
+export function PassportScanScreen({
+  serverUrl,
   onBack,
-  onImageCaptured 
+  onImageCaptured,
 }: PassportScanScreenProps) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const [camera, setCamera] = useState<Camera | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedDocumentType, setSelectedDocumentType] = useState<DocumentType>(documentTypes[0] as DocumentType);
+  const [selectedDocumentType, setSelectedDocumentType] =
+    useState<DocumentType>(documentTypes[0] as DocumentType);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [frameCoords, setFrameCoords] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  // 프레임 좌표 계산
+  useEffect(() => {
+    const frameWidth = screenWidth * 0.85; // 85%
+    const frameHeight = selectedDocumentType.isPassportType
+      ? screenHeight * 0.5 // 여권: 50%
+      : screenHeight * 0.3; // 신분증: 30%
+    const x = (screenWidth - frameWidth) / 2; // 중앙 정렬
+    const y = (screenHeight - frameHeight) / 2; // 중앙 정렬
+
+    setFrameCoords({ x, y, width: frameWidth, height: frameHeight });
+  }, [selectedDocumentType]);
 
   const checkPermission = useCallback(async () => {
     if (!hasPermission) {
@@ -50,48 +87,69 @@ export function PassportScanScreen({
   }, [checkPermission]);
 
   const takePicture = async () => {
-    if (camera) {
+    if (camera && frameCoords) {
       try {
         const photo = await camera.takePhoto({
           flash: 'off',
         });
-        
         const imagePath = `file://${photo.path}`;
-        setCapturedImage(imagePath);
-        console.log('사진 촬영 성공:', photo.path);
-        
-        // 외부로 이미지 경로와 문서 유형 전달
+        console.log('원본 사진 경로:', imagePath);
+
+        // 프레임 영역 크롭
+        const croppedImage = await ImagePicker.openCropper({
+          path: imagePath.replace('file://', ''),
+          width: Math.round(frameCoords.width),
+          height: Math.round(frameCoords.height),
+          cropperActiveWidgetColor: '#007AFF',
+          cropperStatusBarColor: '#000',
+          cropperToolbarColor: '#000',
+          includeBase64: false,
+          mediaType: 'photo',
+        });
+
+        // 검정색 배경 캔버스에 크롭된 이미지 합성
+        const finalImage = await ImagePicker.openCropper({
+          path: croppedImage.path,
+          width: Math.round(screenWidth),
+          height: Math.round(screenHeight),
+          cropping: true,
+          cropperActiveWidgetColor: '#007AFF',
+          cropperStatusBarColor: '#000',
+          cropperToolbarColor: '#000',
+          includeBase64: false,
+          mediaType: 'photo',
+        });
+
+        setCapturedImage(finalImage.path);
+        console.log('최종 이미지 경로:', finalImage.path);
+
+        // 외부로 최종 이미지 전달
         if (onImageCaptured && typeof onImageCaptured === 'function') {
-          onImageCaptured(imagePath, selectedDocumentType);
+          onImageCaptured(finalImage.path, selectedDocumentType);
         }
       } catch (e) {
-        console.error('사진 촬영 실패:', e);
+        console.error('사진 촬영 또는 처리 실패:', e);
+        Alert.alert('오류', '사진 처리 중 오류가 발생했습니다.');
       }
     }
   };
 
   const uploadImage = async () => {
     if (!capturedImage) return;
-    
+
     setLoading(true);
     try {
-      // 이미지 파일을 FormData로 준비
       const formData = new FormData();
-      
-      // @ts-ignore - React Native의 FormData는 TypeScript 정의가 완벽하지 않음
       formData.append('document', {
         uri: capturedImage,
         type: 'image/jpeg',
         name: `document_${selectedDocumentType.id}.jpg`,
       });
-      
-      // 문서 타입 정보 추가
       formData.append('documentType', selectedDocumentType.id);
-      
-      // 전달받은 서버 URL 사용
+
       const uploadUrl = `${serverUrl}/upload`;
       console.log('업로드 URL:', uploadUrl);
-      
+
       const response = await fetch(uploadUrl, {
         method: 'POST',
         body: formData,
@@ -99,12 +157,12 @@ export function PassportScanScreen({
           'Content-Type': 'multipart/form-data',
         },
       });
-      
+
       const result = await response.json();
-      
+
       if (response.ok) {
         Alert.alert('성공', '문서 이미지가 성공적으로 업로드되었습니다.', [
-          { text: '확인', onPress: onBack }
+          { text: '확인', onPress: onBack },
         ]);
       } else {
         Alert.alert('오류', result.message || '업로드 중 오류가 발생했습니다.');
@@ -137,7 +195,7 @@ export function PassportScanScreen({
           <Text style={styles.backButtonText}>뒤로</Text>
         </TouchableOpacity>
       )}
-      
+
       {!hasPermission ? (
         <View style={styles.permissionContainer}>
           <Text style={styles.permissionText}>카메라 권한이 필요합니다</Text>
@@ -150,7 +208,6 @@ export function PassportScanScreen({
           <Text style={styles.text}>카메라를 사용할 수 없습니다</Text>
         </View>
       ) : capturedImage ? (
-        // 이미지 캡처 후 표시
         <View style={styles.previewContainer}>
           <Image source={{ uri: capturedImage }} style={styles.preview} />
           {loading ? (
@@ -163,14 +220,16 @@ export function PassportScanScreen({
               <TouchableOpacity style={styles.button} onPress={resetImage}>
                 <Text style={styles.buttonText}>다시 촬영</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.confirmButton]} onPress={uploadImage}>
+              <TouchableOpacity
+                style={[styles.button, styles.confirmButton]}
+                onPress={uploadImage}
+              >
                 <Text style={styles.buttonText}>서버로 전송</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
       ) : (
-        // 카메라 표시
         <View style={styles.cameraContainer}>
           <Camera
             ref={(ref) => setCamera(ref)}
@@ -180,77 +239,88 @@ export function PassportScanScreen({
             photo={true}
           />
           <View style={styles.overlay}>
-            {/* 상단 어두운 영역 */}
-            <View style={[
-              styles.maskSection, 
-              { 
-                height: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                top: 0, 
-                left: 0, 
-                right: 0 
-              }
-            ]} />
-            
-            {/* 왼쪽 어두운 영역 */}
-            <View style={[
-              styles.maskSection, 
-              { 
-                top: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                bottom: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                left: 0, 
-                width: '7.5%' 
-              }
-            ]} />
-            
-            {/* 오른쪽 어두운 영역 */}
-            <View style={[
-              styles.maskSection, 
-              { 
-                top: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                bottom: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                right: 0, 
-                width: '7.5%' 
-              }
-            ]} />
-            
-            {/* 하단 어두운 영역 */}
-            <View style={[
-              styles.maskSection, 
-              { 
-                height: selectedDocumentType.isPassportType ? '25%' : '35%', 
-                bottom: 0, 
-                left: 0, 
-                right: 0 
-              }
-            ]} />
-            
-            {/* 투명한 프레임 테두리 */}
-            <View 
+            {/* 상단 마스크 */}
+            <View
               style={[
-                styles.documentFrame, 
-                selectedDocumentType.isPassportType ? styles.passportFrame : styles.cardFrame
-              ]} 
+                styles.maskSection,
+                {
+                  height: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                },
+              ]}
+            />
+            {/* 왼쪽 마스크 */}
+            <View
+              style={[
+                styles.maskSection,
+                {
+                  top: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  bottom: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  left: 0,
+                  width: '7.5%',
+                },
+              ]}
+            />
+            {/* 오른쪽 마스크 */}
+            <View
+              style={[
+                styles.maskSection,
+                {
+                  top: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  bottom: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  right: 0,
+                  width: '7.5%',
+                },
+              ]}
+            />
+            {/* 하단 마스크 */}
+            <View
+              style={[
+                styles.maskSection,
+                {
+                  height: selectedDocumentType.isPassportType ? '25%' : '35%',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                },
+              ]}
+            />
+            {/* 프레임 테두리 */}
+            <View
+              style={[
+                styles.documentFrame,
+                selectedDocumentType.isPassportType
+                  ? styles.passportFrame
+                  : styles.cardFrame,
+              ]}
             />
           </View>
-          
+
           <View style={styles.documentTypeContainer}>
-            <TouchableOpacity style={styles.documentTypeButton} onPress={toggleTypeSelector}>
-              <Text style={styles.documentTypeText}>{selectedDocumentType.name} ▼</Text>
+            <TouchableOpacity
+              style={styles.documentTypeButton}
+              onPress={toggleTypeSelector}
+            >
+              <Text style={styles.documentTypeText}>
+                {selectedDocumentType.name} ▼
+              </Text>
             </TouchableOpacity>
-            
             {showTypeSelector && (
               <View style={styles.typeSelector}>
                 <ScrollView>
                   {documentTypes.map((type) => (
-                    <TouchableOpacity 
-                      key={type.id} 
+                    <TouchableOpacity
+                      key={type.id}
                       style={styles.typeOption}
                       onPress={() => selectDocumentType(type)}
                     >
-                      <Text 
+                      <Text
                         style={[
                           styles.typeOptionText,
-                          selectedDocumentType.id === type.id && styles.selectedTypeText
+                          selectedDocumentType.id === type.id &&
+                            styles.selectedTypeText,
                         ]}
                       >
                         {type.name}
@@ -261,14 +331,17 @@ export function PassportScanScreen({
               </View>
             )}
           </View>
-          
+
           <View style={styles.controlsContainer}>
             <Text style={styles.guideText}>
-              {selectedDocumentType.isPassportType 
-                ? '여권을 프레임 안에 맞추어 주세요' 
+              {selectedDocumentType.isPassportType
+                ? '여권을 프레임 안에 맞추어 주세요'
                 : '문서를 프레임 안에 맞추어 주세요'}
             </Text>
-            <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
+            <TouchableOpacity
+              style={styles.captureButton}
+              onPress={takePicture}
+            >
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
           </View>
@@ -459,8 +532,8 @@ const styles = StyleSheet.create({
   },
   maskSection: {
     position: 'absolute',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: '#000', // 불투명 검정색
   },
 });
 
-export default PassportScanScreen; 
+export default PassportScanScreen;

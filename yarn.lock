@@ -10574,6 +10574,7 @@ __metadata:
     react: ^19.0.0
     react-native: ^0.78.2
     react-native-builder-bob: ^0.40.6
+    react-native-image-crop-picker: ^0.42.0
     react-native-image-editor: ^0.0.1
     react-native-vision-camera: ^4.6.4
   languageName: unknown
@@ -10604,6 +10605,7 @@ __metadata:
     react: 19.0.0
     react-native: 0.78.2
     react-native-builder-bob: ^0.40.6
+    react-native-image-crop-picker: ^0.42.0
     react-native-vision-camera: ^3.9.0
     release-it: ^17.10.0
     turbo: ^1.10.7
@@ -10613,6 +10615,15 @@ __metadata:
     react-native: "*"
   languageName: unknown
   linkType: soft
+
+"react-native-image-crop-picker@npm:^0.42.0":
+  version: 0.42.0
+  resolution: "react-native-image-crop-picker@npm:0.42.0"
+  peerDependencies:
+    react-native: ">=0.40.0"
+  checksum: 40d13e9a610d15b0bbaf2a6ec6de476caffc941e7d70d9c2254c101f2f65b6fa3f2ebf7669a44c30508adc130c2ea7ddae9c9c9d35dc9468ebad4139833fe5a1
+  languageName: node
+  linkType: hard
 
 "react-native-image-editor@npm:^0.0.1":
   version: 0.0.1
