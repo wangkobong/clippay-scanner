@@ -69,6 +69,7 @@
     "@release-it/conventional-changelog": "^9.0.2",
     "@types/jest": "^29.5.5",
     "@types/react": "^19.0.0",
+    "@types/react-native": "^0.72.8",
     "commitlint": "^19.6.1",
     "del-cli": "^5.1.0",
     "eslint": "^9.22.0",
@@ -82,6 +83,9 @@
     "release-it": "^17.10.0",
     "turbo": "^1.10.7",
     "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "react-native-vision-camera": "^3.9.0"
   },
   "peerDependencies": {
     "react": "*",
