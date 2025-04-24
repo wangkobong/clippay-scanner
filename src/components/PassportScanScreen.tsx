@@ -15,38 +15,31 @@ import {
   useCameraPermission,
 } from 'react-native-vision-camera';
 import ImagePicker from 'react-native-image-crop-picker';
+import { DocumentScanService } from '../services';
+import { documentTypes } from '../models';
+import type { DocumentType } from '../models';
 
 // 화면 크기 - 전체 화면의 너비와 높이를 가져옵니다.
 // 이 값들을 기준으로 캡처 영역의 크기를 계산합니다.
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// 문서 유형 정의 - 여권은 isPassportType이 true, 다른 문서는 false
-export type DocumentType = {
-  id: string; // 문서 유형 식별자
-  name: string; // 문서 유형 이름 (화면에 표시)
-  isPassportType: boolean; // 여권 유형 여부 (true: 여권, false: 기타 문서)
-};
-
-// 지원되는 문서 유형 목록
-const documentTypes: DocumentType[] = [
-  { id: '01', name: '국내여권', isPassportType: true },
-  { id: '10', name: '해외여권', isPassportType: true },
-  { id: '02', name: '주민등록증', isPassportType: false },
-  { id: '03', name: '운전면허증', isPassportType: false },
-  { id: '04', name: '신용카드', isPassportType: false },
-];
-
 // 컴포넌트 Props 인터페이스
 interface PassportScanScreenProps {
   serverUrl: string; // 이미지를 업로드할 서버 URL
+  userId: string; // 사용자 ID (mbUid)
+  countryCode?: string; // 국가 코드 (선택 사항)
   onBack?: () => void; // 뒤로가기 버튼 클릭 시 실행할 함수
   onImageCaptured?: (imageUri: string, documentType: DocumentType) => void; // 이미지 캡처 후 실행할 콜백
+  onScanComplete?: (scanResult: any) => void; // 스캔 완료 후 결과를 전달할 콜백
 }
 
 export function PassportScanScreen({
   serverUrl,
+  userId,
+  countryCode,
   onBack,
   onImageCaptured,
+  onScanComplete,
 }: PassportScanScreenProps) {
   // 카메라 권한 관련 훅
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -168,42 +161,32 @@ export function PassportScanScreen({
     setLoading(true); // 로딩 시작
 
     try {
-      // FormData 객체 생성 및 이미지 첨부
-      const formData = new FormData();
-      formData.append('document', {
-        uri: imagePath, // 이미지 경로
-        type: 'image/jpeg', // 이미지 타입
-        name: `document_${selectedDocumentType.id}.jpg`, // 파일명
-      });
-      // 문서 유형 ID 첨부
-      formData.append('documentType', selectedDocumentType.id);
-
-      // 업로드 URL 설정
-      const uploadUrl = `${serverUrl}/upload`;
-      console.log('업로드 URL:', uploadUrl);
-
-      // 서버로 이미지 전송
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      // 응답 처리
-      const result = await response.json();
+      // 문서 스캔 서비스 인스턴스 생성
+      const documentScanService = new DocumentScanService(serverUrl);
+      
+      // 서비스 레이어를 통해 이미지 스캔 및 업로드
+      const result = await documentScanService.scanDocument(
+        imagePath,
+        selectedDocumentType,
+        userId,
+        countryCode
+      );
 
       // 성공 또는 실패 알림
-      if (response.ok) {
-        Alert.alert('성공', '문서 이미지가 성공적으로 업로드되었습니다.', [
+      if (result.success) {
+        // 스캔 성공 시 콜백 호출 (있는 경우)
+        if (onScanComplete && typeof onScanComplete === 'function') {
+          onScanComplete(result.data);
+        }
+        
+        Alert.alert('성공', '문서가 성공적으로 스캔되었습니다.', [
           { text: '확인', onPress: onBack }, // 확인 버튼 클릭 시 뒤로 가기
         ]);
       } else {
-        Alert.alert('오류', result.message || '업로드 중 오류가 발생했습니다.');
+        Alert.alert('오류', result.message || '문서 스캔 중 오류가 발생했습니다.');
       }
     } catch (error) {
-      console.error('업로드 오류:', error);
+      console.error('스캔 및 업로드 오류:', error);
       Alert.alert('오류', '네트워크 오류가 발생했습니다.');
     } finally {
       setLoading(false); // 로딩 종료
